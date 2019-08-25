@@ -186,19 +186,82 @@ Users who churned tend to listen much less songs than others.
 
 ## Preprocessing
 
+I finally choose `log_weekday`, `reg_weekday`, `log_month`, `reg_month`, `area`, `level`, `avg_songs` as the useful features, `churn` as the label. But `area` and `level` are all string features and cannot directly use in machine learning model, So I first use a `StringIndexer` to transform them into numerical values, assemble all features using `VectorAssember` and scale them using `StandardScaler`:
+
+```python
+# first convert categorical feature into numerical feature using StringIndexer
+df_data = df_cleaned.select('log_weekday', 'reg_weekday', 'log_month', 'reg_month', 'area', 'level', 'avg_songs', 'churn')
+areaIndexer = StringIndexer(inputCol='area', outputCol='area_feature')
+levelIndexer = StringIndexer(inputCol='level', outputCol='level_feature')
+# then assemble values into vector and scale them
+assembler = VectorAssembler(inputCols=['log_weekday', 'reg_weekday', 'log_month', 'reg_month', 'area_feature', 'level_feature', 'avg_songs'], outputCol='features_vec')
+standardScaler = StandardScaler(inputCol='features_vec', outputCol='features')
+
+df_data = areaIndexer.fit(df_data).transform(df_data)
+df_data = levelIndexer.fit(df_data).transform(df_data)
+df_data = assembler.transform(df_data)
+df_data = standardScaler.fit(df_data).transform(df_data)
+df_data = df_data.withColumnRenamed('churn', 'label')
+```
+
 ## Model Training
 
-## Model Improvements
+I split the dataset into train, validation and test set, in the ratio of 80%-10%-10%. Then I choose 3 classifiers as candidates: logistic regression, random forest and SVM. By combining cross validator, binary classification evaluator with these classifiers respectively, I trained and validate them with the evaluator and get the AUC value from them, take logistic regression as an example:
+
+```python
+lr = LogisticRegression(maxIter=20)
+paramGrid = ParamGridBuilder().addGrid(lr.regParam, [0.3, 0.01]).addGrid(lr.elasticNetParam, [1.0, 0.8]).build()
+evaluator = BinaryClassificationEvaluator()
+crossval = CrossValidator(estimator=lr, 
+                          estimatorParamMaps=paramGrid, 
+                          evaluator=evaluator, 
+                          numFolds=3)
+
+lr_model = lr.fit(train)
+print('AUC value: {}'.format(evaluator.evaluate(lr_model.transform(validation))))
+```
+
+I got:
+
+| Classifier             | AUC  |
+| ---------------------- | ---- |
+| LogisticRegression     | 0.62 |
+| RandomForestClassifier | 0.59 |
+| LinearSVC              | 0.61 |
+
+So logistic regression wins the game, and I evaluate it on test set, in score of 0.61.
+
+```python
+# logistic regression is the best, try it on test set
+# AUC value: 0.6124042843876265
+print('AUC value: {}'.format(evaluator.evaluate(lr_model.transform(test))))
+```
 
 # Results
 
-## Validation
-
-## What Do We Get
+The process of model training lies on not only  the algorithms, but also the cross validation mechanics. By using ParamGridBuilder we can explore the parameter space and detect the best model efficiently. And we determine which model is the best by using AUC, the more this value approaches 1 the better.
 
 # Conclusion
 
-## Rethinking
+A complete solution of data science project contains the following important parts:
 
-## How To Do Better
+1. Think carefully and identity what the problem is, where to get the data;
+2. Deep understanding of the data and the business;
+3. Detailed data wrangling, EDA and feature engineering;
+4. Model training combining with hyper-parameter tuning;
+5. Choosing the appropriate evaluator to train the best model;
+6. Deliver this model to improve the current business and continuously monitor the effects;
+
+Step 3 and 4 are the most challenging parts. When doing data wrangling and EDA, we have to think carefully and dig deeply into the data, trying to construct new features on space dimension or time dimension, to find relationships between the features and the object. Then based on the deep understanding about the data, we can train a model that is much better than train it directly: Any model training without EDA is a mistake !
+
+If we want to improve the implementation, we at least have two paths:
+
+On one hand, we can reconsider our data, trying to collect more data related, for example, we can analyze the location data, mining more data about the regions, or extract more information in `ts` and `registration` feature, finding out the holidays, or add some data about the singer, the sales volume of the songs (whether it is a best seller), let a lot more features in and doing PCA if necessary.
+
+On the other hand, we can choose more classifers such as gradient boosted trees and naive bayes, or using more advanced deep learning techniques to improve the performance.
+
+## References
+
+1. [Spark Python API Docs](https://spark.apache.org/docs/latest/api/python/index.html)
+2. [StackOverflow](https://stackoverflow.com/)
 
